@@ -29,9 +29,13 @@ On top of that:
   activity level, and current phase (Mifflin-St Jeor BMR + phase-adjusted
   surplus/deficit and protein targets) — or set your own.
 - **Live food lookup** against the free [Open Food Facts](https://world.openfoodfacts.org)
-  database (hundreds of thousands of real products, no API key required),
-  with barcode lookup, a built-in offline fallback for common whole foods,
-  and local caching so repeat searches work without a network.
+  database (millions of real products, no API key required), plus reliable
+  barcode lookup. Open Food Facts' public text-search endpoint has
+  inconsistent CORS headers server-side, so searches retry automatically
+  (usually resolving in under a second, occasionally a couple of seconds);
+  if it's ever fully unreachable, search transparently falls back to a small
+  built-in offline list of common whole foods so logging never blocks. Local
+  caching means repeat searches work instantly, network or not.
 - **Meal planner**: save reusable meals from searched or custom foods, assign
   them across a 7-day planner grid, and log a whole meal to today in one tap.
 - Everything is stored locally in your browser — nothing is uploaded anywhere

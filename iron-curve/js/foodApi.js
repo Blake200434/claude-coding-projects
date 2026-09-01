@@ -82,16 +82,38 @@ function offlineMatches(query) {
   return local.map((f) => ({ ...f, id: f.id || `local-${f.name}`, source: f.source || 'offline' }));
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The OFF v2 REST search endpoint (/api/v2/search) sends CORS headers reliably,
+// but it silently ignores the `search_terms` parameter and just returns an
+// unfiltered product listing — useless for name search. Only the legacy
+// cgi/search.pl endpoint actually does free-text relevance matching, but its
+// CORS headers are inconsistent (observed ~1-in-4 requests succeed). Retrying
+// several times turns that into a reliably-successful search in practice,
+// while the barcode lookup below uses the (correct and reliable) v2 endpoint.
+async function fetchWithRetry(url, attempts = 6) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`OFF request failed: ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(150);
+    }
+  }
+  throw lastErr;
+}
+
 export async function searchFoods(query) {
   if (!query || query.trim().length < 2) return [];
   const cached = fromCache(query);
   if (cached) return cached;
 
   try {
-    const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&page_size=15&fields=code,product_name,generic_name,brands,nutriments`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`OFF search failed: ${res.status}`);
-    const data = await res.json();
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=15&fields=code,product_name,generic_name,brands,nutriments`;
+    const data = await fetchWithRetry(url);
     const mapped = (data.products || [])
       .map(mapOffProduct)
       .filter((f) => f.name !== 'Unnamed product' && (f.per100g.cal > 0 || f.per100g.protein > 0 || f.per100g.carbs > 0 || f.per100g.fat > 0));
@@ -106,9 +128,7 @@ export async function searchFoods(query) {
 
 export async function lookupBarcode(code) {
   try {
-    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
-    if (!res.ok) throw new Error('barcode lookup failed');
-    const data = await res.json();
+    const data = await fetchWithRetry(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
     if (data.status !== 1 || !data.product) return null;
     return mapOffProduct(data.product);
   } catch {
