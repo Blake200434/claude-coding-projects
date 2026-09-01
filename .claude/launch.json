@@ -18,6 +18,12 @@
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "word-ladder-duel/serve.ps1"],
       "port": 8082
+    },
+    {
+      "name": "iron-curve",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "iron-curve/serve.ps1"],
+      "port": 8083
     }
   ]
 }
