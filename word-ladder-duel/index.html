@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word Ladder Duel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Word Ladder Duel</h1>
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-value" id="streakValue">0</span>
+          <span class="stat-label">streak</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="bestValue">0</span>
+          <span class="stat-label">best score</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="difficulty-row" id="difficultyRow">
+      <button class="diff-btn active" data-diff="easy">Easy</button>
+      <button class="diff-btn" data-diff="medium">Medium</button>
+      <button class="diff-btn" data-diff="hard">Hard</button>
+    </div>
+
+    <div class="timer-wrap">
+      <div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div>
+      <span class="timer-label" id="timerLabel">60s</span>
+    </div>
+
+    <div class="board" id="board">
+      <!-- rungs injected here -->
+    </div>
+
+    <form id="guessForm" class="guess-form">
+      <input type="text" id="guessInput" autocomplete="off" spellcheck="false" placeholder="Type the next word..." maxlength="8">
+      <button type="submit" class="primary-btn">Enter</button>
+    </form>
+
+    <p class="feedback" id="feedback">&nbsp;</p>
+
+    <div class="btn-row">
+      <button id="hintBtn" class="secondary-btn">Hint (-15s)</button>
+      <button id="giveUpBtn" class="secondary-btn">Give Up</button>
+      <button id="newBtn" class="secondary-btn">New Puzzle</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="resultModal">
+    <div class="modal">
+      <h2 id="resultTitle">Solved!</h2>
+      <p id="resultBody"></p>
+      <div id="resultPath" class="result-path"></div>
+      <button id="playAgainBtn" class="primary-btn">Play Again</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

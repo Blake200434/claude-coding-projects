@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "focus-sprint",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "focus-sprint/serve.ps1"],
+      "port": 8080
+    },
+    {
+      "name": "generative-doodle",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "generative-doodle/serve.ps1"],
+      "port": 8081
+    },
+    {
+      "name": "word-ladder-duel",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "word-ladder-duel/serve.ps1"],
+      "port": 8082
+    }
+  ]
+}

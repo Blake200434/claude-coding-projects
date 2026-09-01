@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generative Doodle</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <button id="panelToggle" class="panel-toggle" aria-label="Toggle controls">✦</button>
+
+  <div id="panel" class="panel">
+    <h1>Generative Doodle</h1>
+    <p class="hint">Draw anywhere on the canvas.</p>
+
+    <div class="field">
+      <span class="field-label">Mode</span>
+      <div class="btn-row" id="modeRow">
+        <button class="opt-btn active" data-mode="flow">Flow</button>
+        <button class="opt-btn" data-mode="kaleidoscope">Kaleidoscope</button>
+        <button class="opt-btn" data-mode="fireworks">Fireworks</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Palette</span>
+      <div class="btn-row" id="paletteRow">
+        <button class="swatch active" data-palette="sunset" style="--sw1:#ff7a5c;--sw2:#ffc65c"></button>
+        <button class="swatch" data-palette="ocean" style="--sw1:#2ee6d6;--sw2:#3a6df0"></button>
+        <button class="swatch" data-palette="neon" style="--sw1:#ff2ec4;--sw2:#7dff4f"></button>
+        <button class="swatch" data-palette="pastel" style="--sw1:#ffb3d9;--sw2:#b3d9ff"></button>
+        <button class="swatch" data-palette="mono" style="--sw1:#e8eaf2;--sw2:#7a8099"></button>
+      </div>
+    </div>
+
+    <div class="field slider-field">
+      <label for="brushSize">Brush size <span id="brushSizeVal">6</span></label>
+      <input type="range" id="brushSize" min="1" max="20" value="6">
+    </div>
+
+    <div class="field slider-field">
+      <label for="density">Density <span id="densityVal">5</span></label>
+      <input type="range" id="density" min="1" max="10" value="5">
+    </div>
+
+    <div class="field slider-field">
+      <label for="fade">Trail fade <span id="fadeVal">6</span></label>
+      <input type="range" id="fade" min="1" max="30" value="6">
+    </div>
+
+    <div class="field slider-field" id="symmetryField">
+      <label for="symmetry">Symmetry <span id="symmetryVal">6</span></label>
+      <input type="range" id="symmetry" min="2" max="16" value="6">
+    </div>
+
+    <div class="btn-row">
+      <button id="clearBtn" class="secondary-btn">Clear</button>
+      <button id="saveBtn" class="primary-btn">Save PNG</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
