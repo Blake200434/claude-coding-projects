@@ -24,6 +24,7 @@ function startSession(splitId, dayName, exerciseIds) {
     sets: [],
     dropGroupByExercise: {},
     supersetGroupId: null,
+    doneExerciseIds: [],
   };
   save();
 }
@@ -58,6 +59,17 @@ function toggleDropSet(exerciseId) {
 function toggleSuperset() {
   const s = state.activeSession;
   s.supersetGroupId = s.supersetGroupId ? null : uid();
+  save();
+}
+
+// Marking an exercise done sinks it to the bottom of the session so the
+// exercises still in progress stay at the top — no scrolling past finished
+// work to get to what's next.
+function toggleExerciseDone(exerciseId) {
+  const s = state.activeSession;
+  const idx = s.doneExerciseIds.indexOf(exerciseId);
+  if (idx === -1) s.doneExerciseIds.push(exerciseId);
+  else s.doneExerciseIds.splice(idx, 1);
   save();
 }
 
@@ -105,6 +117,7 @@ export function render(container) {
   if (state.activeSession) {
     if (!state.activeSession.dropGroupByExercise) state.activeSession.dropGroupByExercise = {};
     if (state.activeSession.supersetGroupId === undefined) state.activeSession.supersetGroupId = null;
+    if (!state.activeSession.doneExerciseIds) state.activeSession.doneExerciseIds = [];
   }
   container.innerHTML = state.activeSession ? sessionView() : pickerView();
   wireEvents(container);
@@ -188,7 +201,12 @@ function rirPickerHtml() {
 
 function sessionView() {
   const s = state.activeSession;
-  const exIds = s.exerciseIds.length ? s.exerciseIds : [];
+  const rawExIds = s.exerciseIds.length ? s.exerciseIds : [];
+  const doneIds = new Set(s.doneExerciseIds || []);
+  // Not-done exercises stay on top (in their existing order); done ones sink
+  // to the bottom (Array#sort is stable, so relative order within each group
+  // is preserved) — so what's still in progress never scrolls out of view.
+  const exIds = [...rawExIds].sort((a, b) => (doneIds.has(a) ? 1 : 0) - (doneIds.has(b) ? 1 : 0));
   const supersetActive = !!s.supersetGroupId;
   const supersetCount = supersetActive ? s.sets.filter((x) => x.groupId === s.supersetGroupId).length : 0;
 
@@ -196,6 +214,21 @@ function sessionView() {
     const ex = getExerciseById(state, exId);
     const name = ex ? ex.name : exId;
     const sets = s.sets.filter((x) => x.exerciseId === exId);
+    const isDone = doneIds.has(exId);
+
+    if (isDone) {
+      const volume = sets.reduce((sum, st) => sum + st.weightKg * st.reps, 0);
+      return `
+      <div class="exercise-block done-block" data-exercise="${exId}">
+        <button type="button" class="done-summary-btn" data-exercise="${exId}">
+          <span class="done-check">✓</span>
+          <span class="done-name">${escapeHtml(name)}</span>
+          <span class="done-meta">${sets.length} set${sets.length === 1 ? '' : 's'} · ${Math.round(displayWeight(volume, unit()))}${unitLabel(unit())} vol</span>
+          <span class="reopen-hint">Reopen</span>
+        </button>
+      </div>`;
+    }
+
     const last = lastPerformance(exId);
     const lastLine = last ? `Last time: ${displayWeight(last.bestSet.weightKg, unit())}${unitLabel(unit())} × ${last.bestSet.reps} on ${fmtDate(last.date)}` : 'No previous data';
     const dropActive = !!s.dropGroupByExercise[exId];
@@ -221,6 +254,7 @@ function sessionView() {
         </div>
         ${setRows || '<p class="empty-msg small">No sets yet</p>'}
         <div class="set-mode-row">
+          <button type="button" class="mode-toggle-btn done-toggle-btn" data-exercise="${exId}">✓ Mark done</button>
           <button type="button" class="mode-toggle-btn drop-toggle ${dropActive ? 'active' : ''}" data-exercise="${exId}">
             ${dropActive ? '● Drop set in progress — tap to end' : '+ Start drop set'}
           </button>
@@ -345,6 +379,10 @@ function wireEvents(container) {
 
   container.querySelectorAll('.drop-toggle').forEach((btn) => {
     btn.addEventListener('click', () => { toggleDropSet(btn.dataset.exercise); render(container); });
+  });
+
+  container.querySelectorAll('.done-toggle-btn, .done-summary-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { toggleExerciseDone(btn.dataset.exercise); render(container); });
   });
 
   container.querySelectorAll('.rir-btn').forEach((btn) => {
