@@ -1,4 +1,7 @@
 // "Train" tab: session logging, split/day selection, custom split builder, history.
+// Sets can be tagged as part of a drop set (same exercise, progressively lighter,
+// no rest) or a superset (back-to-back different exercises, no rest) so they're
+// tracked and displayed as a group rather than looking like ordinary flat sets.
 import { state, save } from './store.js';
 import { getAllExercises, getAllSplits, getExerciseById, MUSCLE_LABELS } from './exercises.js';
 import { getExerciseHistory } from './progress.js';
@@ -7,6 +10,8 @@ import { uid, todayStr, fmtDate, fmtDateLong, fmtDuration, displayWeight, toKg, 
 let tickInterval = null;
 let restInterval = null;
 let restRemaining = 0;
+
+const RIR_OPTIONS = [0, 1, 2, 3, 4, 5];
 
 function unit() { return state.profile.unit; }
 
@@ -17,18 +22,42 @@ function startSession(splitId, dayName, exerciseIds) {
     splitDayName: dayName,
     exerciseIds: [...exerciseIds],
     sets: [],
+    dropGroupByExercise: {},
+    supersetGroupId: null,
   };
   save();
 }
 
-function addSet(exerciseId, weightKg, reps, rpe) {
-  state.activeSession.sets.push({ id: uid(), exerciseId, weightKg, reps, rpe: rpe || null, t: Date.now() });
-  if (!state.activeSession.exerciseIds.includes(exerciseId)) state.activeSession.exerciseIds.push(exerciseId);
+function addSet(exerciseId, weightKg, reps, rir) {
+  const s = state.activeSession;
+  let setType = 'normal';
+  let groupId = null;
+  if (s.supersetGroupId) {
+    setType = 'superset';
+    groupId = s.supersetGroupId;
+  } else if (s.dropGroupByExercise[exerciseId]) {
+    setType = 'drop';
+    groupId = s.dropGroupByExercise[exerciseId];
+  }
+  s.sets.push({ id: uid(), exerciseId, weightKg, reps, rir: rir ?? null, t: Date.now(), setType, groupId });
+  if (!s.exerciseIds.includes(exerciseId)) s.exerciseIds.push(exerciseId);
   save();
 }
 
 function removeSet(setId) {
   state.activeSession.sets = state.activeSession.sets.filter((s) => s.id !== setId);
+  save();
+}
+
+function toggleDropSet(exerciseId) {
+  const s = state.activeSession;
+  s.dropGroupByExercise[exerciseId] = s.dropGroupByExercise[exerciseId] ? null : uid();
+  save();
+}
+
+function toggleSuperset() {
+  const s = state.activeSession;
+  s.supersetGroupId = s.supersetGroupId ? null : uid();
   save();
 }
 
@@ -42,7 +71,7 @@ function finishSession() {
     startedAt: s.startedAt,
     endedAt: Date.now(),
     durationSec,
-    sets: s.sets.map(({ id, exerciseId, weightKg, reps, rpe }) => ({ id, exerciseId, weightKg, reps, rpe })),
+    sets: s.sets.map(({ id, exerciseId, weightKg, reps, rir, setType, groupId }) => ({ id, exerciseId, weightKg, reps, rir, setType, groupId })),
   });
   state.activeSession = null;
   save();
@@ -56,12 +85,27 @@ function discardSession() {
 function lastPerformance(exerciseId) {
   const history = getExerciseHistory(exerciseId);
   if (!history.length) return null;
-  const last = history[history.length - 1];
-  return last;
+  return history[history.length - 1];
+}
+
+// For a grouped set, figure out its position within its drop/superset cluster
+// (drop groups are scoped to one exercise; superset groups span exercises, so
+// this always looks at the whole session's sets, not just one exercise's).
+function groupLabelFor(set, allSets) {
+  if (!set.groupId) return null;
+  const groupSets = allSets.filter((x) => x.groupId === set.groupId).sort((a, b) => a.t - b.t);
+  const idx = groupSets.findIndex((x) => x.id === set.id);
+  if (set.setType === 'drop') return idx === 0 ? 'Top set' : `Drop ${idx}`;
+  if (set.setType === 'superset') return `Superset #${idx + 1}`;
+  return null;
 }
 
 export function render(container) {
   clearInterval(tickInterval);
+  if (state.activeSession) {
+    if (!state.activeSession.dropGroupByExercise) state.activeSession.dropGroupByExercise = {};
+    if (state.activeSession.supersetGroupId === undefined) state.activeSession.supersetGroupId = null;
+  }
   container.innerHTML = state.activeSession ? sessionView() : pickerView();
   wireEvents(container);
   if (state.activeSession) {
@@ -98,7 +142,9 @@ function pickerView() {
       <div class="hist-sets">
         ${w.sets.map((s) => {
           const ex = getExerciseById(state, s.exerciseId);
-          return `<div class="hist-set-row"><span>${escapeHtml(ex ? ex.name : s.exerciseId)}</span><span>${displayWeight(s.weightKg, unit())}${unitLabel(unit())} × ${s.reps}${s.rpe ? ` @${s.rpe}` : ''}</span></div>`;
+          const label = groupLabelFor(s, w.sets);
+          const tag = label ? ` <span class="hist-set-tag ${s.setType}">${escapeHtml(label)}</span>` : '';
+          return `<div class="hist-set-row"><span>${escapeHtml(ex ? ex.name : s.exerciseId)}${tag}</span><span>${displayWeight(s.weightKg, unit())}${unitLabel(unit())} × ${s.reps}${s.rir !== null && s.rir !== undefined ? ` · RIR ${s.rir}` : ''}</span></div>`;
         }).join('')}
       </div>
     </details>`;
@@ -132,23 +178,40 @@ function exercisePickerOptions(excludeIds = []) {
     .join('');
 }
 
+function rirPickerHtml() {
+  return `
+    <div class="rir-picker">
+      <span class="rir-picker-label">RIR</span>
+      ${RIR_OPTIONS.map((r, i) => `<button type="button" class="rir-btn" data-value="${r}">${i === RIR_OPTIONS.length - 1 ? '5+' : r}</button>`).join('')}
+    </div>`;
+}
+
 function sessionView() {
   const s = state.activeSession;
   const exIds = s.exerciseIds.length ? s.exerciseIds : [];
+  const supersetActive = !!s.supersetGroupId;
+  const supersetCount = supersetActive ? s.sets.filter((x) => x.groupId === s.supersetGroupId).length : 0;
+
   const blocks = exIds.map((exId) => {
     const ex = getExerciseById(state, exId);
     const name = ex ? ex.name : exId;
     const sets = s.sets.filter((x) => x.exerciseId === exId);
     const last = lastPerformance(exId);
     const lastLine = last ? `Last time: ${displayWeight(last.bestSet.weightKg, unit())}${unitLabel(unit())} × ${last.bestSet.reps} on ${fmtDate(last.date)}` : 'No previous data';
-    const setRows = sets.map((set, i) => `
-      <div class="set-row">
-        <span class="set-index">${i + 1}</span>
+    const dropActive = !!s.dropGroupByExercise[exId];
+
+    const setRows = sets.map((set) => {
+      const label = groupLabelFor(set, s.sets);
+      const indexLabel = label || String(sets.indexOf(set) + 1);
+      return `
+      <div class="set-row ${set.groupId ? `grouped grouped-${set.setType}` : ''}">
+        <span class="set-index ${label ? 'set-index-label' : ''}">${escapeHtml(indexLabel)}</span>
         <span>${displayWeight(set.weightKg, unit())} ${unitLabel(unit())}</span>
         <span>× ${set.reps}</span>
-        <span>${set.rpe ? `RPE ${set.rpe}` : ''}</span>
+        <span>${set.rir !== null && set.rir !== undefined ? `RIR ${set.rir}` : ''}</span>
         <button class="icon-btn danger remove-set" data-id="${set.id}">✕</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     return `
       <div class="exercise-block" data-exercise="${exId}">
@@ -157,13 +220,17 @@ function sessionView() {
           <span class="last-perf">${escapeHtml(lastLine)}</span>
         </div>
         ${setRows || '<p class="empty-msg small">No sets yet</p>'}
+        <div class="set-mode-row">
+          <button type="button" class="mode-toggle-btn drop-toggle ${dropActive ? 'active' : ''}" data-exercise="${exId}">
+            ${dropActive ? '● Drop set in progress — tap to end' : '+ Start drop set'}
+          </button>
+        </div>
         <form class="add-set-form" data-exercise="${exId}">
-          <input type="number" step="0.5" min="0" placeholder="${unitLabel(unit())}" class="input-weight" required>
-          <input type="number" min="1" placeholder="reps" class="input-reps" required>
-          <select class="input-rpe">
-            <option value="">RPE</option>
-            ${[6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10].map((r) => `<option value="${r}">${r}</option>`).join('')}
-          </select>
+          <div class="add-set-inputs">
+            <input type="number" step="0.5" min="0" placeholder="${unitLabel(unit())}" class="input-weight" required>
+            <input type="number" min="1" placeholder="reps" class="input-reps" required>
+          </div>
+          ${rirPickerHtml()}
           <button type="submit" class="primary-btn small">Add Set</button>
         </form>
       </div>`;
@@ -187,6 +254,13 @@ function sessionView() {
         <input type="number" id="restSeconds" value="${state.profile.restTimerSec}" min="10" step="5">
         <button class="secondary-btn small" id="restStart">Start</button>
         <span id="restDisplay" class="rest-display"></span>
+      </div>
+
+      <div class="superset-row">
+        <button type="button" id="supersetToggle" class="mode-toggle-btn superset-toggle ${supersetActive ? 'active' : ''}">
+          ${supersetActive ? `● Superset in progress (${supersetCount} sets) — tap to end` : '+ Start superset'}
+        </button>
+        <span class="hint-text superset-hint">${supersetActive ? 'Every set you log now, across any exercise, joins this superset.' : 'Turn on before alternating between exercises with no rest between them.'}</span>
       </div>
 
       <label class="field">
@@ -266,16 +340,34 @@ function wireEvents(container) {
     render(container);
   });
 
+  const supersetToggle = container.querySelector('#supersetToggle');
+  if (supersetToggle) supersetToggle.addEventListener('click', () => { toggleSuperset(); render(container); });
+
+  container.querySelectorAll('.drop-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => { toggleDropSet(btn.dataset.exercise); render(container); });
+  });
+
+  container.querySelectorAll('.rir-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const picker = btn.closest('.rir-picker');
+      const wasActive = btn.classList.contains('active');
+      picker.querySelectorAll('.rir-btn').forEach((b) => b.classList.remove('active'));
+      if (!wasActive) btn.classList.add('active');
+    });
+  });
+
   container.querySelectorAll('.add-set-form').forEach((form) => {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const exId = form.dataset.exercise;
       const weightInput = form.querySelector('.input-weight').value;
       const reps = parseInt(form.querySelector('.input-reps').value, 10);
-      const rpe = form.querySelector('.input-rpe').value ? Number(form.querySelector('.input-rpe').value) : null;
+      const rirBtn = form.querySelector('.rir-btn.active');
+      const rir = rirBtn ? Number(rirBtn.dataset.value) : null;
       const weightKg = round(toKg(parseFloat(weightInput), unit()), 2);
       if (!weightKg || !reps) return;
-      addSet(exId, weightKg, reps, rpe);
+      addSet(exId, weightKg, reps, rir);
       render(container);
     });
   });

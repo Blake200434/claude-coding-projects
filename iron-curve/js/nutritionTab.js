@@ -1,7 +1,7 @@
 // "Nutrition" tab: calorie/macro targets, live food search (Open Food Facts), daily log.
 import { state, save } from './store.js';
 import { computeTargets, getLogForDate, addLogEntry, removeLogEntry, dayTotals, saveCustomFood, macrosFor } from './nutrition.js';
-import { searchFoods, lookupBarcode } from './foodApi.js';
+import { searchFoods, lookupBarcode, getCatalogue } from './foodApi.js';
 import { ring, barMeter } from './charts.js';
 import { uid, todayStr, addDays, fmtDateLong, debounce, escapeHtml, round } from './utils.js';
 
@@ -10,6 +10,7 @@ let searchResults = [];
 let searchQuery = '';
 let pendingFood = null; // food selected from search, awaiting grams/meal confirmation
 let searching = false;
+let searchToken = 0; // guards against a slow, stale search overwriting a newer one
 
 const MEAL_SLOTS = [
   { id: 'breakfast', label: 'Breakfast' },
@@ -51,6 +52,10 @@ export function render(container) {
         <span id="searchStatus" class="search-status">${searching ? 'Searching…' : ''}</span>
       </div>
       <div id="searchResults" class="search-results">${renderSearchResults()}</div>
+      <details class="catalogue-details">
+        <summary>Browse food catalogue</summary>
+        <div class="catalogue-list">${catalogueHtml()}</div>
+      </details>
       <details class="barcode-details">
         <summary>Look up by barcode</summary>
         <div class="barcode-row">
@@ -75,6 +80,23 @@ export function render(container) {
   wireEvents(container);
 }
 
+// Updates only the results list and status text, leaving the search <input>
+// untouched — replacing it (as a full render would) drops focus and closes
+// the on-screen keyboard on mobile mid-search.
+function updateSearchArea(container) {
+  const resultsEl = container.querySelector('#searchResults');
+  const statusEl = container.querySelector('#searchStatus');
+  if (resultsEl) resultsEl.innerHTML = renderSearchResults();
+  if (statusEl) statusEl.textContent = searching ? 'Searching…' : '';
+  bindSearchResultClicks(container);
+}
+
+function bindSearchResultClicks(container) {
+  container.querySelectorAll('#searchResults .search-result').forEach((btn) => {
+    btn.addEventListener('click', () => { pendingFood = searchResults[Number(btn.dataset.index)]; render(container); });
+  });
+}
+
 function renderSearchResults() {
   if (!searchResults.length) return '';
   return searchResults.map((f, i) => `
@@ -82,6 +104,20 @@ function renderSearchResults() {
       <span class="sr-name">${escapeHtml(f.name)}${f.brand ? ` <span class="sr-brand">· ${escapeHtml(f.brand)}</span>` : ''}</span>
       <span class="sr-macros">${Math.round(f.per100g.cal)} kcal · P${Math.round(f.per100g.protein)} C${Math.round(f.per100g.carbs)} F${Math.round(f.per100g.fat)} /100g</span>
     </button>`).join('');
+}
+
+function catalogueHtml() {
+  return getCatalogue().map((g) => `
+    <div class="catalogue-group">
+      <h4 class="catalogue-group-title">${escapeHtml(g.category)}</h4>
+      <div class="catalogue-items">
+        ${g.items.map((f, i) => `
+          <button class="search-result catalogue-item" data-category="${escapeHtml(g.category)}" data-index="${i}">
+            <span class="sr-name">${escapeHtml(f.name)}</span>
+            <span class="sr-macros">${Math.round(f.per100g.cal)} kcal · P${Math.round(f.per100g.protein)} C${Math.round(f.per100g.carbs)} F${Math.round(f.per100g.fat)} /100g</span>
+          </button>`).join('')}
+      </div>
+    </div>`).join('');
 }
 
 function confirmAddForm() {
@@ -143,20 +179,32 @@ function wireEvents(container) {
 
   const searchInput = container.querySelector('#foodSearchInput');
   searchInput.addEventListener('input', debounce(async () => {
-    searchQuery = searchInput.value;
-    if (searchQuery.trim().length < 2) { searchResults = []; render(container); return; }
+    const myToken = ++searchToken;
+    const query = searchInput.value;
+    searchQuery = query;
+    if (query.trim().length < 2) {
+      searchResults = [];
+      updateSearchArea(container);
+      return;
+    }
     searching = true;
-    render(container);
-    container.querySelector('#foodSearchInput').focus();
-    searchResults = await searchFoods(searchQuery);
+    updateSearchArea(container);
+    const results = await searchFoods(query);
+    if (myToken !== searchToken) return; // a newer search already superseded this one
+    searchResults = results;
     searching = false;
-    render(container);
-    const el = container.querySelector('#foodSearchInput');
-    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    updateSearchArea(container);
   }, 450));
 
-  container.querySelectorAll('.search-result').forEach((btn) => {
-    btn.addEventListener('click', () => { pendingFood = searchResults[Number(btn.dataset.index)]; render(container); });
+  bindSearchResultClicks(container);
+
+  container.querySelectorAll('.catalogue-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const group = getCatalogue().find((g) => g.category === btn.dataset.category);
+      const item = group.items[Number(btn.dataset.index)];
+      pendingFood = item;
+      render(container);
+    });
   });
 
   const barcodeBtn = container.querySelector('#barcodeBtn');

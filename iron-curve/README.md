@@ -22,7 +22,11 @@ On top of that:
 - **Workout tracking** with built-in Push/Pull/Legs, Upper/Lower, Full Body,
   and Bro Split templates, plus a custom split builder, live session timer,
   configurable rest timer, and per-exercise "last time" recall for
-  progressive overload.
+  progressive overload. Sets are logged with **RIR (reps in reserve)**
+  instead of RPE, and can be tagged as a **drop set** (progressively lighter,
+  same exercise, no rest) or a **superset** (alternating exercises, no rest)
+  — each cluster is grouped and labeled ("Top set" / "Drop 1", "Superset #1" /
+  "#2"...) both live and in your saved workout history.
 - **Weekly volume by muscle group**, stacked so you can spot a lagging or
   neglected group before it becomes a weak point.
 - **Calorie & macro tracking** with targets auto-calculated from your stats,
@@ -36,8 +40,14 @@ On top of that:
   if it's ever fully unreachable, search transparently falls back to a small
   built-in offline list of common whole foods so logging never blocks. Local
   caching means repeat searches work instantly, network or not.
-- **Meal planner**: save reusable meals from searched or custom foods, assign
-  them across a 7-day planner grid, and log a whole meal to today in one tap.
+- **A browsable food catalogue** on top of live search — categorized whole
+  foods (protein, carbs, dairy, produce, fats/legumes) plus a "Pub &
+  Takeaway" section (chicken parmigiana, fish and chips, burgers, kebabs,
+  pizza, nachos, and more) for the composite dishes that rarely show up as
+  barcoded products on Open Food Facts. Works fully offline.
+- **Meal planner**: save reusable meals from searched, catalogue, or custom
+  foods, assign them across a 7-day planner grid, and log a whole meal to
+  today in one tap.
 - Everything is stored locally in your browser — nothing is uploaded anywhere
   except the food-name searches you type, which go straight to Open Food
   Facts. Export/import a full JSON backup any time from the Profile tab.

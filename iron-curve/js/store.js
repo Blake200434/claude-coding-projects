@@ -48,12 +48,28 @@ function deepMerge(defaults, saved) {
   return saved === undefined ? defaults : saved;
 }
 
+// Sets logged before RIR replaced RPE only have an `rpe` field (6-10 scale).
+// Convert them so old workouts still show a sensible effort value instead of
+// silently losing it. RIR = "reps in reserve" is roughly 10 - RPE.
+function migrateRpeToRir(set) {
+  if (set.rir === undefined && typeof set.rpe === 'number') {
+    set.rir = Math.max(0, Math.min(5, Math.round(10 - set.rpe)));
+  }
+  return set;
+}
+
+function migrate(state) {
+  for (const w of state.workouts) w.sets = w.sets.map(migrateRpeToRir);
+  if (state.activeSession) state.activeSession.sets = state.activeSession.sets.map(migrateRpeToRir);
+  return state;
+}
+
 function loadState() {
   const defaults = defaultState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
-    return deepMerge(defaults, JSON.parse(raw));
+    return migrate(deepMerge(defaults, JSON.parse(raw)));
   } catch {
     return defaults;
   }

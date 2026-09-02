@@ -1,7 +1,7 @@
 // "Meals" tab: reusable meal templates + a weekly meal planner.
 import { state, save } from './store.js';
 import { addLogEntry, macrosFor, computeTargets } from './nutrition.js';
-import { searchFoods } from './foodApi.js';
+import { searchFoods, getCatalogue } from './foodApi.js';
 import { uid, todayStr, debounce, escapeHtml, round } from './utils.js';
 
 const DAYS = [
@@ -14,6 +14,48 @@ const SLOT_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', 
 let draftItems = [];
 let draftSearchResults = [];
 let draftPending = null;
+let draftSearchQuery = '';
+let draftSearching = false;
+let draftSearchToken = 0; // guards against a slow, stale search overwriting a newer one
+
+function renderDraftSearchResults() {
+  return draftSearchResults.map((f, i) => `
+    <button class="search-result" data-index="${i}">
+      <span class="sr-name">${escapeHtml(f.name)}${f.brand ? ` <span class="sr-brand">· ${escapeHtml(f.brand)}</span>` : ''}</span>
+      <span class="sr-macros">${Math.round(f.per100g.cal)} kcal /100g</span>
+    </button>`).join('');
+}
+
+// Updates only the results list and status text, leaving the search <input>
+// untouched — a full render mid-search would drop focus and close the
+// on-screen keyboard on mobile.
+function updateDraftSearchArea(container) {
+  const resultsEl = container.querySelector('#mealSearchResults');
+  const statusEl = container.querySelector('#mealSearchStatus');
+  if (resultsEl) resultsEl.innerHTML = renderDraftSearchResults();
+  if (statusEl) statusEl.textContent = draftSearching ? 'Searching…' : '';
+  bindDraftSearchClicks(container);
+}
+
+function bindDraftSearchClicks(container) {
+  container.querySelectorAll('#mealSearchResults .search-result').forEach((btn) => {
+    btn.addEventListener('click', () => { draftPending = draftSearchResults[Number(btn.dataset.index)]; render(container); });
+  });
+}
+
+function catalogueHtml() {
+  return getCatalogue().map((g) => `
+    <div class="catalogue-group">
+      <h4 class="catalogue-group-title">${escapeHtml(g.category)}</h4>
+      <div class="catalogue-items">
+        ${g.items.map((f, i) => `
+          <button class="search-result catalogue-item" data-category="${escapeHtml(g.category)}" data-index="${i}">
+            <span class="sr-name">${escapeHtml(f.name)}</span>
+            <span class="sr-macros">${Math.round(f.per100g.cal)} kcal /100g</span>
+          </button>`).join('')}
+      </div>
+    </div>`).join('');
+}
 
 function mealTotals(meal) {
   return meal.items.reduce((acc, item) => {
@@ -42,14 +84,15 @@ function builderSection() {
   return `
     <section class="card">
       <h2>Build a meal</h2>
-      <input type="text" id="mealFoodSearch" placeholder="Search a food to add to this meal…" autocomplete="off">
-      <div id="mealSearchResults" class="search-results">
-        ${draftSearchResults.map((f, i) => `
-          <button class="search-result" data-index="${i}">
-            <span class="sr-name">${escapeHtml(f.name)}${f.brand ? ` <span class="sr-brand">· ${escapeHtml(f.brand)}</span>` : ''}</span>
-            <span class="sr-macros">${Math.round(f.per100g.cal)} kcal /100g</span>
-          </button>`).join('')}
+      <div class="food-search">
+        <input type="text" id="mealFoodSearch" placeholder="Search a food to add to this meal…" value="${escapeHtml(draftSearchQuery)}" autocomplete="off">
+        <span id="mealSearchStatus" class="search-status">${draftSearching ? 'Searching…' : ''}</span>
       </div>
+      <div id="mealSearchResults" class="search-results">${renderDraftSearchResults()}</div>
+      <details class="catalogue-details">
+        <summary>Browse food catalogue</summary>
+        <div class="catalogue-list">${catalogueHtml()}</div>
+      </details>
       ${draftPending ? `
         <div class="confirm-add">
           <strong>${escapeHtml(draftPending.name)}</strong>
@@ -131,17 +174,32 @@ function wireEvents(container) {
   const searchInput = container.querySelector('#mealFoodSearch');
   if (searchInput) {
     searchInput.addEventListener('input', debounce(async () => {
+      const myToken = ++draftSearchToken;
       const q = searchInput.value;
-      if (q.trim().length < 2) { draftSearchResults = []; render(container); return; }
-      draftSearchResults = await searchFoods(q);
-      render(container);
-      const el = container.querySelector('#mealFoodSearch');
-      if (el) { el.value = q; el.focus(); }
+      draftSearchQuery = q;
+      if (q.trim().length < 2) {
+        draftSearchResults = [];
+        updateDraftSearchArea(container);
+        return;
+      }
+      draftSearching = true;
+      updateDraftSearchArea(container);
+      const results = await searchFoods(q);
+      if (myToken !== draftSearchToken) return; // a newer search already superseded this one
+      draftSearchResults = results;
+      draftSearching = false;
+      updateDraftSearchArea(container);
     }, 450));
   }
 
-  container.querySelectorAll('#mealSearchResults .search-result').forEach((btn) => {
-    btn.addEventListener('click', () => { draftPending = draftSearchResults[Number(btn.dataset.index)]; render(container); });
+  bindDraftSearchClicks(container);
+
+  container.querySelectorAll('.catalogue-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const group = getCatalogue().find((g) => g.category === btn.dataset.category);
+      draftPending = group.items[Number(btn.dataset.index)];
+      render(container);
+    });
   });
 
   const draftAddForm = container.querySelector('#draftAddForm');
@@ -152,6 +210,7 @@ function wireEvents(container) {
       draftItems.push({ name: draftPending.name, brand: draftPending.brand || '', per100g: draftPending.per100g, grams });
       draftPending = null;
       draftSearchResults = [];
+      draftSearchQuery = '';
       render(container);
     });
     container.querySelector('#draftCancel').addEventListener('click', () => { draftPending = null; render(container); });
